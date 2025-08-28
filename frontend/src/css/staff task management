@@ -1,0 +1,507 @@
+import React, { useState, useEffect } from 'react';
+import './css/StaffTaskManagement.css';
+
+function StaffTaskManagement() {
+    const [tasks, setTasks] = useState([]);
+    const [submissions, setSubmissions] = useState([]);
+    const [showAddForm, setShowAddForm] = useState(false);
+    const [showEditForm, setShowEditForm] = useState(false);
+    const [showSubmissions, setShowSubmissions] = useState(false);
+    const [editingTask, setEditingTask] = useState(null);
+    const [selectedTask, setSelectedTask] = useState(null);
+    const [formData, setFormData] = useState({
+        title: '',
+        description: '',
+        dueDate: '',
+        dueTime: '',
+        maxMarks: 100
+    });
+
+    const staffId = localStorage.getItem('staffId');
+    
+    // Debug logging
+    console.log('StaffTaskManagement: staffId from localStorage:', staffId);
+    console.log('StaffTaskManagement: All localStorage keys:', Object.keys(localStorage));
+
+    useEffect(() => {
+        if (staffId) {
+            console.log('StaffTaskManagement: Fetching tasks and submissions for staffId:', staffId);
+            fetchTasks();
+            fetchAllSubmissions();
+        } else {
+            console.log('StaffTaskManagement: No staffId found, trying to get from staffData');
+            // Try to get staffId from staffData if available
+            const staffData = localStorage.getItem('staffData');
+            if (staffData) {
+                const parsed = JSON.parse(staffData);
+                console.log('StaffTaskManagement: Found staffData:', parsed);
+                if (parsed._id) {
+                    console.log('StaffTaskManagement: Using staffId from staffData:', parsed._id);
+                    // Update localStorage
+                    localStorage.setItem('staffId', parsed._id);
+                    // Fetch data
+                    fetchTasks();
+                    fetchAllSubmissions();
+                }
+            }
+        }
+    }, [staffId]);
+
+    const fetchTasks = async () => {
+        try {
+            const currentStaffId = localStorage.getItem('staffId');
+            console.log('StaffTaskManagement: fetchTasks called with staffId:', currentStaffId);
+            const response = await fetch(`http://localhost:8070/task/staff/${currentStaffId}`);
+            const data = await response.json();
+            console.log('StaffTaskManagement: Tasks response:', data);
+            setTasks(data);
+        } catch (error) {
+            console.error('Error fetching tasks:', error);
+        }
+    };
+
+    const fetchAllSubmissions = async () => {
+        try {
+            const response = await fetch('http://localhost:8070/task-submission/');
+            const data = await response.json();
+            console.log('StaffTaskManagement: Submissions response:', data);
+            setSubmissions(data);
+        } catch (error) {
+            console.error('Error fetching submissions:', error);
+        }
+    };
+
+    const handleInputChange = (e) => {
+        setFormData({
+            ...formData,
+            [e.target.name]: e.target.value
+        });
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            const currentStaffId = localStorage.getItem('staffId');
+            const response = await fetch('http://localhost:8070/task/add', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    ...formData,
+                    staffId: currentStaffId
+                }),
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert('Task added successfully!');
+                setShowAddForm(false);
+                resetForm();
+                fetchTasks();
+            } else {
+                alert(data.message || 'Failed to add task');
+            }
+        } catch (error) {
+            console.error('Error adding task:', error);
+            alert('Error adding task. Please try again.');
+        }
+    };
+
+    const handleEdit = async (e) => {
+        e.preventDefault();
+        try {
+            const response = await fetch(`http://localhost:8070/task/update/${editingTask._id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    ...formData,
+                    Task_Id: editingTask.Task_Id // Keep the existing Task_Id when editing
+                }),
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert('Task updated successfully!');
+                setShowEditForm(false);
+                resetForm();
+                fetchTasks();
+            } else {
+                alert(data.message || 'Failed to update task');
+            }
+        } catch (error) {
+            console.error('Error updating task:', error);
+            alert('Error updating task. Please try again.');
+        }
+    };
+
+    const handleDelete = async (taskId) => {
+        if (window.confirm('Are you sure you want to delete this task?')) {
+            try {
+                const response = await fetch(`http://localhost:8070/task/delete/${taskId}`, {
+                    method: 'DELETE',
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    alert('Task deleted successfully!');
+                    fetchTasks();
+                } else {
+                    alert(data.message || 'Failed to delete task');
+                }
+            } catch (error) {
+                console.error('Error deleting task:', error);
+                alert('Error deleting task. Please try again.');
+            }
+        }
+    };
+
+    const handleGradeSubmission = async (submissionId, marks, feedback) => {
+        try {
+            const currentStaffId = localStorage.getItem('staffId');
+            const response = await fetch(`http://localhost:8070/task-submission/grade/${submissionId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    marks: parseInt(marks),
+                    feedback,
+                    gradedBy: currentStaffId
+                }),
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert('Submission graded successfully!');
+                fetchAllSubmissions();
+            } else {
+                alert(data.message || 'Failed to grade submission');
+            }
+        } catch (error) {
+            console.error('Error grading submission:', error);
+            alert('Error grading submission. Please try again.');
+        }
+    };
+
+    const resetForm = () => {
+        setFormData({
+            title: '',
+            description: '',
+            dueDate: '',
+            dueTime: '',
+            maxMarks: 100
+        });
+    };
+
+    const openEditForm = (task) => {
+        setEditingTask(task);
+        setFormData({
+            title: task.title,
+            description: task.description,
+            dueDate: new Date(task.dueDate).toISOString().split('T')[0],
+            dueTime: task.dueTime,
+            maxMarks: task.maxMarks
+        });
+        setShowEditForm(true);
+    };
+
+    const openSubmissions = (task) => {
+        setSelectedTask(task);
+        setShowSubmissions(true);
+    };
+
+    const formatDate = (dateString) => {
+        return new Date(dateString).toLocaleDateString();
+    };
+
+    const getSubmissionsForTask = (taskId) => {
+        return submissions.filter(sub => sub.taskId._id === taskId);
+    };
+
+    return (
+        <div className="staff-task-management">
+            <h2>Task Management</h2>
+            
+            <div className="action-buttons">
+                <button 
+                    className="btn btn-primary"
+                    onClick={() => setShowAddForm(!showAddForm)}
+                >
+                    {showAddForm ? 'Cancel' : 'Add New Task'}
+                </button>
+                <button 
+                    className="btn btn-secondary"
+                    onClick={() => setShowSubmissions(!showSubmissions)}
+                >
+                    {showSubmissions ? 'Hide Submissions' : 'View All Submissions'}
+                </button>
+            </div>
+
+            {/* Add Task Form */}
+            {showAddForm && (
+                <div className="task-form">
+                    <h3>Add New Task</h3>
+                    <form onSubmit={handleSubmit}>
+                        <div className="form-group">
+                            <label>Title:</label>
+                            <input
+                                type="text"
+                                name="title"
+                                value={formData.title}
+                                onChange={handleInputChange}
+                                required
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Description:</label>
+                            <textarea
+                                name="description"
+                                value={formData.description}
+                                onChange={handleInputChange}
+                                required
+                            />
+                        </div>
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label>Due Date:</label>
+                                <input
+                                    type="date"
+                                    name="dueDate"
+                                    value={formData.dueDate}
+                                    onChange={handleInputChange}
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Due Time:</label>
+                                <input
+                                    type="time"
+                                    name="dueTime"
+                                    value={formData.dueTime}
+                                    onChange={handleInputChange}
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Max Marks:</label>
+                                <input
+                                    type="number"
+                                    name="maxMarks"
+                                    value={formData.maxMarks}
+                                    onChange={handleInputChange}
+                                    min="1"
+                                    max="100"
+                                    required
+                                />
+                            </div>
+                        </div>
+                        <div className="form-actions">
+                            <button type="submit" className="btn btn-primary">Add Task</button>
+                            <button 
+                                type="button" 
+                                className="btn btn-secondary"
+                                onClick={() => setShowAddForm(false)}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* Edit Task Form */}
+            {showEditForm && (
+                <div className="task-form">
+                    <h3>Edit Task</h3>
+                    <form onSubmit={handleEdit}>
+                        <div className="form-group">
+                            <label>Title:</label>
+                            <input
+                                type="text"
+                                name="title"
+                                value={formData.title}
+                                onChange={handleInputChange}
+                                required
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Description:</label>
+                            <textarea
+                                name="description"
+                                value={formData.description}
+                                onChange={handleInputChange}
+                                required
+                            />
+                        </div>
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label>Due Date:</label>
+                                <input
+                                    type="date"
+                                    name="dueDate"
+                                    value={formData.dueDate}
+                                    onChange={handleInputChange}
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Due Time:</label>
+                                <input
+                                    type="time"
+                                    name="dueTime"
+                                    value={formData.dueTime}
+                                    onChange={handleInputChange}
+                                    required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Max Marks:</label>
+                                <input
+                                    type="number"
+                                    name="maxMarks"
+                                    value={formData.maxMarks}
+                                    onChange={handleInputChange}
+                                    min="1"
+                                    max="100"
+                                    required
+                                />
+                            </div>
+                        </div>
+                        <div className="form-actions">
+                            <button type="submit" className="btn btn-primary">Update Task</button>
+                            <button 
+                                type="button" 
+                                className="btn btn-secondary"
+                                onClick={() => setShowEditForm(false)}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* Tasks List */}
+            <div className="tasks-section">
+                <h3>Your Tasks</h3>
+                {tasks.length > 0 ? (
+                    <div className="tasks-list">
+                        {tasks.map((task) => (
+                            <div key={task._id} className="task-item">
+                                <div className="task-header">
+                                    <h4>{task.title}</h4>
+                                    <span className="task-id">{task.Task_Id}</span>
+                                </div>
+                                <p className="task-description">{task.description}</p>
+                                <div className="task-details">
+                                    <span>Due: {formatDate(task.dueDate)} at {task.dueTime}</span>
+                                    <span>Marks: {task.maxMarks}</span>
+                                    <span className={`status ${task.status}`}>{task.status}</span>
+                                </div>
+                                <div className="task-actions">
+                                    <button 
+                                        className="btn btn-secondary"
+                                        onClick={() => openEditForm(task)}
+                                    >
+                                        Edit
+                                    </button>
+                                    <button 
+                                        className="btn btn-info"
+                                        onClick={() => openSubmissions(task)}
+                                    >
+                                        View Submissions ({getSubmissionsForTask(task._id).length})
+                                    </button>
+                                    <button 
+                                        className="btn btn-danger"
+                                        onClick={() => handleDelete(task._id)}
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p>No tasks available</p>
+                )}
+            </div>
+
+            {/* Submissions View */}
+            {showSubmissions && (
+                <div className="submissions-section">
+                    <h3>Student Submissions</h3>
+                    {selectedTask && (
+                        <div className="selected-task-info">
+                            <h4>Task: {selectedTask.title}</h4>
+                            <p>Due: {formatDate(selectedTask.dueDate)} at {selectedTask.dueTime}</p>
+                        </div>
+                    )}
+                    
+                    {submissions.length > 0 ? (
+                        <div className="submissions-list">
+                            {submissions.map((submission) => (
+                                <div key={submission._id} className="submission-item">
+                                    <div className="submission-header">
+                                        <span className="student-name">
+                                            {submission.studentId?.name || 'Unknown Student'}
+                                        </span>
+                                        <span className={`status ${submission.status}`}>
+                                            {submission.status}
+                                        </span>
+                                    </div>
+                                    <div className="submission-content">
+                                        <p><strong>Task:</strong> {submission.taskId?.title}</p>
+                                        <p><strong>Submission:</strong> {submission.submissionText}</p>
+                                        <p><strong>Submitted:</strong> {formatDate(submission.submittedAt)}</p>
+                                    </div>
+                                    {submission.status === 'graded' ? (
+                                        <div className="graded-info">
+                                            <p><strong>Marks:</strong> {submission.marks}/{submission.taskId?.maxMarks}</p>
+                                            <p><strong>Feedback:</strong> {submission.feedback}</p>
+                                            <p><strong>Graded by:</strong> {submission.gradedBy?.name}</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grade-form">
+                                            <input
+                                                type="number"
+                                                placeholder="Marks"
+                                                min="0"
+                                                max={submission.taskId?.maxMarks || 100}
+                                                id={`marks-${submission._id}`}
+                                            />
+                                            <textarea
+                                                placeholder="Feedback"
+                                                id={`feedback-${submission._id}`}
+                                            />
+                                            <button 
+                                                className="btn btn-primary"
+                                                onClick={() => {
+                                                    const marks = document.getElementById(`marks-${submission._id}`).value;
+                                                    const feedback = document.getElementById(`feedback-${submission._id}`).value;
+                                                    if (marks && feedback) {
+                                                        handleGradeSubmission(submission._id, marks, feedback);
+                                                    } else {
+                                                        alert('Please enter both marks and feedback');
+                                                    }
+                                                }}
+                                            >
+                                                Grade
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p>No submissions available</p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default StaffTaskManagement;
